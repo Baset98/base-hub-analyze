@@ -302,17 +302,19 @@ app.post('/api/score', async (req, res) => {
     }
 });
 
-app.listen(PORT, 'localhost', () => {
-    console.log(`✅ Server started successfully on port ${PORT}!`);
-    console.log(`🌐 Your app is ready! Visit:`);
-    console.log(`   http://localhost:${PORT}`);
-    console.log(`\nTo stop the server, press Ctrl+C.`);
-}).on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} is already in use!`);
-        console.error('Please close the other application using this port.');
-    } else {
-        console.error('❌ Error starting server:', err.message);
-    }
-    process.exit(1);
-});
+if (require.main === module) {
+    app.listen(PORT, 'localhost', () => {
+        console.log(`✅ Server started successfully on port ${PORT}!`);
+        console.log(`🌐 Your app is ready! Visit:`);
+        console.log(`   http://localhost:${PORT}`);
+        console.log(`\nTo stop the server, press Ctrl+C.`);
+    }).on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`❌ Port ${PORT} is already in use!`);
+            console.error('Please close the other application using this port.');
+        } else {
+            console.error('❌ Error starting server:', err.message);
+        }
+        process.exit(1);
+    });
+}
