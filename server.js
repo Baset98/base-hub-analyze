@@ -2,11 +2,16 @@ const express = require('express');
 const axios = require('axios');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
-// تنظیمات Alchemy و Infura
-const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY || 'FyOWAiQRAtBBgp0FhEY-V';
-const INFURA_API_KEY = process.env.INFURA_API_KEY || '81996db4d2ba4a2c99b6a27b6702b758';
+// Environment variables for blockchain APIs
+const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
+const INFURA_API_KEY = process.env.INFURA_API_KEY;
+
+// Validate required environment variables
+if (!ALCHEMY_API_KEY || !INFURA_API_KEY) {
+    console.warn('⚠️  Warning: ALCHEMY_API_KEY or INFURA_API_KEY not set. Some features may not work.');
+}
 
 const NETWORK_CONFIG = {
     base: {
@@ -51,8 +56,6 @@ async function fetchTransferAnalysisFromAlchemy(address, networkConfig) {
         // دریافت تراکنش‌های outbound و inbound از Alchemy - با retry
         let outboundRes, inboundRes;
         let retries = 3;
-        
-        while (retries > 0) {
             try {
                 [outboundRes, inboundRes] = await Promise.all([
                     axios.post(networkConfig.rpcUrl, {
@@ -73,13 +76,16 @@ async function fetchTransferAnalysisFromAlchemy(address, networkConfig) {
             } catch (err) {
                 retries--;
                 if (err.response?.status === 429 && retries > 0) {
-                    console.warn(`⚠️ Alchemy Rate limit - تلاش دوباره در ${2 ** (3 - retries)} ثانیه...`);
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** (3 - retries))));
+                    const waitTime = 2 ** (3 - retries);
+                    console.warn(`⚠️ Alchemy Rate limit - retry in ${waitTime}s...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * waitTime));
                 } else if (retries === 0) {
                     throw err;
                 }
             }
         }
+        
+        while (retries > 0) {
 
         const transfersOut = outboundRes?.data?.result?.transfers || [];
         const transfersIn = inboundRes?.data?.result?.transfers || [];
@@ -219,28 +225,33 @@ async function fetchTransferAnalysisFromAlchemy(address, networkConfig) {
             largest_native_transfers: largestNativeTransfers,
         };
     } catch (err) {
-        console.error('❌ خطا در دریافت آنالیز از Alchemy:', err.message);
+        console.error('❌ Error fetching transfer analysis:', err.message);
         return null;
     }
 }
 
-// این خط پوشه public را به عنوان فایل‌های سایت معرفی می‌کند
+// Middleware
 app.use(express.static('public'));
 app.use(express.json());
 
-// این مسیر (API) درخواست را از سایت می‌گیرد and محاسبه می‌کند
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// POST /api/score endpoint
 app.post('/api/score', async (req, res) => {
     const { address, network = 'base' } = req.body;
 
     if (!address) {
-        return res.status(400).json({ error: "آدرس وارد نشده است" });
+        return res.status(400).json({ error: 'Address is required' });
     }
 
     let networkConfig;
     try {
         networkConfig = getNetworkConfig(network);
     } catch (err) {
-        return res.status(400).json({ error: "شبکه انتخابی معتبر نیست" });
+        return res.status(400).json({ error: 'Invalid network' });
     }
 
     try {
@@ -276,15 +287,15 @@ app.post('/api/score', async (req, res) => {
         const balanceEth = Number(BigInt(balanceReq.data.result)) / 1e18;
         const txCount = parseInt(txCountReq.data.result, 16);
 
-        // محاسبات امتیاز کلی (Score & Rank)
+        // Calculate score and rank
         const totalScore = (txCount * 10) + Math.floor(balanceEth * 50);
         
-        let rank = "Newbie 👶";
-        if (totalScore > 100) rank = "Explorer 🧭";
-        if (totalScore > 500) rank = "Base Believer 🔵";
-        if (totalScore > 2000) rank = "Base OG 👑";
+        let rank = 'Newbie';
+        if (totalScore > 100) rank = 'Explorer';
+        if (totalScore > 500) rank = 'Base Believer';
+        if (totalScore > 2000) rank = 'Base OG';
 
-        // ارسال نتیجه به سایت
+        // Return result
         res.json({
             balance: balanceEth.toFixed(4),
             txCount: txCount,
@@ -297,8 +308,8 @@ app.post('/api/score', async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "خطا در ارتباط با شبکه" });
+        console.error('API error:', error.message);
+        res.status(500).json({ error: 'Network error' });
     }
 });
 
